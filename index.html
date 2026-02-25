@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>음식 만다라트</title>
+    <title>메뉴를 정해드립니다</title>
     <style>
         body {
             margin: 0; background-color: #FFFDF5;
@@ -100,15 +100,15 @@
         const isMobile = window.innerWidth <= 768;
 
         const ORIGIN = 600;
-        const NODE_SIZE  = isMobile ? 110 : 75;
-        const LEAF_SIZE  = isMobile ? 95  : 65;
+        const NODE_SIZE  = isMobile ? 90 : 75;
+        const LEAF_SIZE  = isMobile ? 78 : 65;
         const HALF_NODE  = NODE_SIZE / 2;
         const HALF_LEAF  = LEAF_SIZE / 2;
-        const DISTANCE   = isMobile ? 200 : 140;   // 중심 → 카테고리
-        const STEP       = isMobile ? 110 : 75;    // 카테고리 → 분기점
-        const SUB_SPREAD = isMobile ? 185 : 130;   // 분기점 좌우 벌어짐
-        const SUB_FWD    = isMobile ? 70  : 50;    // 분기점 → 서브노드 전진
-        const LEAF_R     = isMobile ? 160 : 115;   // 서브노드 → 리프 반지름
+        const DISTANCE   = isMobile ? 165 : 140;   // 중심 → 카테고리
+        const STEP       = isMobile ? 90 : 75;    // 카테고리 → 분기점
+        const SUB_SPREAD = isMobile ? 155 : 130;   // 분기점 좌우 벌어짐
+        const SUB_FWD    = isMobile ? 58 : 50;    // 분기점 → 서브노드 전진
+        const LEAF_R     = isMobile ? 133 : 115;   // 서브노드 → 리프 반지름
 
         // ══════════════════════════════════════════
         //  전체 음식 데이터
