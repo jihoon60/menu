@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>음식 만다라트</title>
+    <style>
+        body {
+            margin: 0; background-color: #FFFDF5;
+            font-family: 'Pretendard', sans-serif; color: #5D5446;
+            overflow: auto; width: 100vw; height: 100vh;
+        }
+        .scroll-wrapper {
+            display: flex; justify-content: center; align-items: center;
+            width: 3000px; height: 3000px; position: relative;
+        }
+        .container {
+            position: relative; width: 1200px; height: 1200px;
+        }
+        #line-canvas {
+            position: absolute; top: 0; left: 0; 
+            width: 1200px; height: 1200px;
+            pointer-events: none; z-index: 1;
+        }
+        .line {
+            stroke: #8D8171; stroke-width: 1.5; fill: none;
+            stroke-dasharray: 1000; stroke-dashoffset: 1000;
+            transition: stroke-dashoffset 0.8s ease-out; opacity: 0.6;
+        }
+        .node {
+            position: absolute; width: 75px; height: 75px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 20px; cursor: pointer; font-weight: 600;
+            box-shadow: 0 4px 15px rgba(93, 84, 70, 0.12);
+            background: #F5EBDC; z-index: 10; font-size: 0.85rem;
+            text-align: center; transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        #center-node { background: #E07A5F; color: white; z-index: 30; }
+        .category { opacity: 0; transform: scale(0); pointer-events: none; }
+        .active { opacity: 1; transform: scale(1); pointer-events: auto; }
+        .sub-option, .leaf-option { 
+            background: #FFFFFF; border: 1.5px solid #E07A5F; color: #E07A5F; 
+            opacity: 0; transform: scale(0.8); z-index: 5;
+        }
+        .leaf-option { border-color: #8D8171; color: #8D8171; font-size: 0.8rem; width: 65px; height: 65px; }
+
+        #modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 999; backdrop-filter: blur(3px); }
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px; background: white; border-radius: 25px; box-shadow: 0 15px 50px rgba(0,0,0,0.2); z-index: 1000; padding: 25px; }
+        .modal-tabs { display: flex; border-bottom: 2px solid #F5EBDC; margin-bottom: 15px; overflow-x: auto; }
+        .tab-btn { padding: 10px 15px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #8D8171; border-bottom: 3px solid transparent; white-space: nowrap; }
+        .tab-btn.active { color: #E07A5F; border-bottom: 3px solid #E07A5F; }
+        #modal-list { list-style: none; padding: 0; max-height: 280px; overflow-y: auto; }
+        #modal-list li { padding: 12px 0; border-bottom: 1px solid #f5f5f5; text-align: center; }
+        .close-modal-btn { display: block; width: 100%; margin-top: 15px; background: #E07A5F; color: white; border: none; padding: 12px; border-radius: 15px; cursor: pointer; }
+        #message { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); color: #8D8171; background: rgba(255, 253, 245, 0.9); padding: 10px 20px; border-radius: 50px; z-index: 100; }
+    </style>
+</head>
+<body>
+    <div id="modal-overlay" onclick="closeModal()"></div>
+    <div id="modal">
+        <div class="modal-tabs" id="modal-tab-container"></div>
+        <ul id="modal-list"></ul>
+        <button class="close-modal-btn" onclick="closeModal()">닫기</button>
+    </div>
+
+    <div class="scroll-wrapper" id="wrapper">
+        <div class="container" id="main-container">
+            <svg id="line-canvas" viewBox="0 0 1200 1200"></svg>
+            <div id="center-node" class="node" style="left:562.5px; top:562.5px;" onclick="toggleMenu()">시작하기</div>
+            <div id="cat-top"    class="node category" onclick="selectCategory(this, '한식', 'top')">한식</div>
+            <div id="cat-right"  class="node category" onclick="selectCategory(this, '일식', 'right')">일식</div>
+            <div id="cat-bottom" class="node category" onclick="selectCategory(this, '양식', 'bottom')">양식</div>
+            <div id="cat-left"   class="node category" onclick="selectCategory(this, '중식', 'left')">중식</div>
+        </div>
+    </div>
+
+    <div id="message">메뉴를 선택해보세요!</div>
+
+    <script>
+        const ORIGIN = 600; 
+        const NODE_SIZE = 75;
+        const HALF_NODE = NODE_SIZE / 2;
+        const DISTANCE = 140;
+
+        // ══════════════════════════════════════════
+        //  전체 음식 데이터
+        // ══════════════════════════════════════════
+        const allFoodData = {
+
+            // ────────── 한식 ──────────
+            "한식": {
+                "안 매운": {
+                    "밥": { 
+                        "덮밥":   ["간장계란덮밥", "참치 덮밥", "갈비 덮밥", "불고기 덮밥", "돈까스 덮밥", "소고기 덮밥", "장조림 덮밥"],
+                        "볶음밥": ["간장 볶음밥", "마늘 볶음밥", "버터 볶음밥", "새우 볶음밥", "계란 볶음밥", "야채 볶음밥", "불고기 볶음밥"],
+                        "김밥":   ["야채 김밥", "꼬마 김밥", "참치 김밥", "치즈 김밥", "돈까스 김밥", "계란말이 김밥", "유부 김밥"],
+                        "국밥":   ["돼지 국밥", "순대 국밥", "모듬 국밥", "소머리 국밥", "콩나물 국밥", "굴 국밥"]
+                    },
+                    "면": { 
+                        "국수/칼국수": ["잔치 국수", "멸치 국수", "칼국수", "바지락 칼국수", "들깨 칼국수", "닭 칼국수", "콩 국수", "메밀 국수"],
+                        "비빔면":      ["간장 비빔국수", "들기름 막국수", "메밀 비빔국수"]
+                    },
+                    "국물": { 
+                        "국":   ["미역국", "소고기 무국", "북엇국", "황태국", "콩나물국", "시래기국", "계란국"],
+                        "탕":   ["설렁탕", "곰탕", "갈비탕", "닭곰탕", "삼계탕", "도가니탕"],
+                        "찌개": ["된장찌개", "청국장찌개", "순두부찌개", "비지찌개"],
+                        "전골": ["불고기 전골", "버섯 전골", "만두 전골", "두부 전골"]
+                    },
+                    "고기": { 
+                        "구이":      ["삼겹살", "목살", "항정살", "소갈비", "LA갈비", "불고기", "돼지갈비"],
+                        "찜 • 조림": ["소갈비찜", "돼지갈비찜", "찜닭", "족발", "보쌈", "수육"]
+                    },
+                    "해산물": { 
+                        "구이":      ["고등어구이", "갈치구이", "조기구이", "삼치구이", "장어구이", "전복구이"],
+                        "찜 • 조림": ["문어 숙회", "낙지 숙회", "간장 게장", "새우장"],
+                        "튀김":      ["생선전", "오징어튀김", "새우튀김", "동태전"]
+                    }
+                },
+                "매운": {
+                    "밥": { 
+                        "덮밥":   ["제육덮밥", "고추장 불고기덮밥", "닭갈비 덮밥", "불닭 덮밥", "낙지 덮밥", "주꾸미 덮밥"],
+                        "볶음밥": ["김치 볶음밥", "불닭 볶음밥", "깍두기 볶음밥"],
+                        "김밥":   ["김치김밥", "제육김밥", "땡초김밥", "매운 오징어김밥", "고추장 불고기김밥"],
+                        "국밥":   ["육개장국밥", "얼큰 순대국밥", "매운 돼지국밥", "뼈해장 국밥"]
+                    },
+                    "면": { 
+                        "국수/칼국수": ["육개장칼국수", "얼큰칼국수", "매운해물칼국수", "김치칼국수", "장칼국수"],
+                        "비빔/냉면":   ["비빔국수", "비빔냉면", "쫄면", "열무 비빔국수", "매운 막국수"],
+                        "볶음면":      ["불닭볶음면"]
+                    },
+                    "국물": { 
+                        "국":   ["육개장", "닭개장", "선지해장국", "뼈해장국", "우거지해장국"],
+                        "탕":   ["감자탕", "추어탕", "아구탕", "동태탕", "알탕", "해물탕"],
+                        "찌개": ["김치찌개", "부대찌개", "고추장찌개", "동태찌개"],
+                        "전골": ["곱창전골", "낙곱새", "불낙전골", "김치전골", "닭발전골"]
+                    },
+                    "고기": { 
+                        "볶음":        ["제육볶음", "닭갈비", "오돌뼈", "고추장 불고기", "곱창볶음", "돼지껍데기 볶음"],
+                        "찜 · 조림":   ["닭볶음탕", "매운갈비찜", "불족발", "매운 등갈비찜"],
+                        "구이 · 철판": ["고추장 삼겹살", "불막창", "불곱창구이"]
+                    },
+                    "해산물": { 
+                        "볶음": ["낙지볶음", "주꾸미볶음", "오징어볶음"],
+                        "찜":   ["아귀찜", "해물찜", "낙지찜", "코다리찜"],
+                        "구이": ["불낙지", "불주꾸미", "불오징어"]
+                    }
+                }
+            },
+
+            // ────────── 일식 ──────────
+            "일식": {
+                "안 매운": {
+                    "밥": {
+                        "덮밥":    ["가츠동", "오야코동", "텐동", "우나동", "규동", "마구로동", "네기토로동", "카이센동"],
+                        "스시":    ["참치 니기리", "연어 니기리", "새우 니기리", "계란말이 니기리", "광어 니기리", "성게 군함", "연어알 군함", "오이 호소마키"],
+                        "오니기리": ["참치마요", "연어", "우메보시", "곤부", "가츠오부시", "명란", "치즈 오니기리"],
+                        "솥밥":    ["연어 솥밥", "표고버섯 솥밥", "굴 솥밥", "마츠타케 솥밥"]
+                    },
+                    "면": {
+                        "우동":  ["카케우동", "붓카케우동", "카마타마우동", "자루우동", "튀김우동", "니쿠우동"],
+                        "소바":  ["자루소바", "모리소바", "오로시 소바", "냉 소바", "카모난반 소바"],
+                        "소멘":  ["냉 소멘", "따뜻한 소멘"]
+                    },
+                    "국물": {
+                        "미소시루": ["두부 미소시루", "와카메 미소시루", "아사리 미소시루", "고구마 미소시루", "나메코 미소시루"],
+                        "오덴":     ["무 오덴", "달걀 오덴", "한펜 오덴", "곤약 오덴", "어묵 오덴", "두부 오덴"],
+                        "수프":     ["계란꽃 수프", "완탕수프", "옥수수 수프"]
+                    },
+                    "고기": {
+                        "돈카츠":   ["히레카츠", "로스카츠", "치즈카츠", "멘치카츠", "카츠산도"],
+                        "구이":     ["테리야키 치킨", "토리카츠", "규카츠", "타마고야키"],
+                        "야키토리": ["모모", "네기마", "츠쿠네", "카와", "하츠"]
+                    },
+                    "해산물": {
+                        "회":     ["참치회", "연어회", "광어회", "방어회", "문어 숙회", "새우회", "도미회"],
+                        "구이":   ["고등어 시오야키", "삼치 시오야키", "꽁치 시오야키", "연어 시오야키", "장어구이"],
+                        "튀김":   ["에비텐뿌라", "카키아게", "연근 텐뿌라", "고구마 텐뿌라", "에비후라이", "카키후라이"]
+                    }
+                },
+                "매운": {
+                    "밥": {
+                        "덮밥":  ["매운 마구로동", "명란 덮밥", "매운 게살 덮밥", "매운 연어 덮밥"],
+                        "카레":  ["비프 카레", "가츠 카레", "해물 카레", "야채 카레", "버터 치킨 카레"],
+                        "볶음밥": ["가라아게 볶음밥", "매운 명란 볶음밥", "김치 오야코 볶음밥"]
+                    },
+                    "면": {
+                        "라멘":  ["미소 라멘", "쇼유 라멘", "돈코츠 라멘", "시오 라멘", "츠케멘", "아부라소바", "마라 라멘"],
+                        "우동":  ["카레우동", "나베야키우동", "야키우동", "탄탄우동"],
+                        "소바":  ["야키소바", "탄탄소바", "니쿠소바"]
+                    },
+                    "국물": {
+                        "나베":   ["키무치나베", "마라 나베", "스키야키", "샤브샤브", "토리나베"],
+                        "탕":     ["돈코츠 수프", "토리파이탄", "카라이 미소시루"]
+                    },
+                    "고기": {
+                        "야키니쿠": ["와규 칼비", "로스", "탄시오", "하라미", "호르몬"],
+                        "볶음":     ["카라아게", "매운 닭고기 볶음", "스파이시 포크"],
+                        "기타":     ["스파이시 카츠동", "매운 멘치카츠"]
+                    },
+                    "해산물": {
+                        "볶음":  ["매운 오징어볶음", "스파이시 새우볶음", "매운 문어볶음"],
+                        "구이":  ["불낙지 시오야키", "매운 장어구이", "스파이시 연어 무니에르"],
+                        "기타":  ["이카후라이", "아지후라이", "매운 해물 나베"]
+                    }
+                }
+            },
+
+            // ────────── 양식 ──────────
+            "양식": {
+                "안 매운": {
+                    "빵/샌드위치": {
+                        "샌드위치":  ["BLT 샌드위치", "클럽 샌드위치", "에그 샌드위치", "참치 샌드위치", "아보카도 샌드위치", "루벤 샌드위치"],
+                        "버거":      ["클래식 버거", "치즈버거", "머쉬룸 버거", "치킨 버거", "아보카도 버거", "더블 패티 버거"],
+                        "브런치":    ["에그 베네딕트", "아보카도 토스트", "프렌치 토스트", "팬케이크", "크레페", "와플"]
+                    },
+                    "샐러드/수프": {
+                        "샐러드": ["시저 샐러드", "니수아즈 샐러드", "카프레제", "아루굴라 샐러드", "콥 샐러드", "월도프 샐러드", "그릭 샐러드"],
+                        "수프":   ["클램차우더", "옥수수 수프", "버섯 크림수프", "감자 수프", "미네스트로네", "프렌치 어니언 수프", "토마토 수프"]
+                    },
+                    "파스타": {
+                        "크림 파스타":  ["카르보나라", "알프레도", "연어 크림 파스타", "버섯 크림 파스타", "로제 파스타"],
+                        "오일 파스타":  ["알리오 올리오", "봉골레", "레몬 파스타", "페스토 파스타"],
+                        "구운 파스타":  ["라자냐", "그라탱", "파스타 알 포르노"]
+                    },
+                    "고기": {
+                        "스테이크":  ["립아이", "채끝 등심", "티본", "뉴욕 스트립", "안심"],
+                        "기타 고기": ["포크 찹", "오리 꽁피", "치킨 코르동 블루", "비프 부르기뇽", "풀드포크"],
+                        "캐주얼":    ["바비큐 폭립", "치킨 윙", "BBQ 치킨", "치킨 텐더"]
+                    },
+                    "해산물": {
+                        "생선":   ["연어 무니에르", "대구 앤드칩스", "참치 스테이크", "가자미 그릴", "도미 오븐구이"],
+                        "갑각류": ["랍스터 테르미도르", "크랩 케이크", "새우 스캠피", "모듬 해물구이"],
+                        "기타":   ["홍합찜 화이트와인", "오징어 튀김", "피쉬앤칩스"]
+                    }
+                },
+                "매운": {
+                    "빵/샌드위치": {
+                        "샌드위치":  ["할라피뇨 치킨 샌드위치", "스파이시 튜나 샌드위치", "핫 소스 BLT"],
+                        "버거":      ["스파이시 치킨 버거", "할라피뇨 치즈버거", "핫 소스 스매시 버거", "나쉬빌 핫 치킨 버거"],
+                        "브런치":    ["스파이시 에그 베네딕트", "멕시칸 스크램블", "핫 살사 브런치 플레이트"]
+                    },
+                    "샐러드/수프": {
+                        "샐러드": ["스파이시 타코 샐러드", "핫 치킨 샐러드", "칠리 콘 카르네 샐러드"],
+                        "수프":   ["스파이시 토마토 수프", "칠리 콘 카르네", "스파이시 조개 차우더", "핫 가스파초"]
+                    },
+                    "파스타": {
+                        "토마토 파스타":  ["아마트리치아나", "아라비아타", "푸타네스카", "스파이시 볼로네제"],
+                        "매운 파스타":    ["페페론치노", "스파이시 봉골레", "칠리 새우 파스타", "매운 명란 파스타"],
+                        "기타":          ["스파이시 라구 파스타", "칠리 오일 파스타"]
+                    },
+                    "고기": {
+                        "스테이크":  ["페퍼 스테이크", "칠리 스테이크", "스파이시 마리네이드 립아이"],
+                        "기타 고기": ["나쉬빌 핫 치킨", "스파이시 폭립", "칠리 치킨", "스파이시 램 찹"],
+                        "캐주얼":    ["버팔로 윙", "스파이시 BBQ 치킨", "핫 풀드포크"]
+                    },
+                    "해산물": {
+                        "생선":   ["스파이시 연어 그릴", "칠리 가자미", "핫 피쉬앤칩스"],
+                        "갑각류": ["스파이시 새우 볶음", "칠리 크랩", "스파이시 가재"],
+                        "기타":   ["스파이시 홍합찜", "칠리 오징어 튀김", "핫 씨푸드 플래터"]
+                    }
+                }
+            },
+
+            // ────────── 중식 ──────────
+            "중식": {
+                "안 매운": {
+                    "밥": {
+                        "볶음밥": ["양주 볶음밥", "새우 볶음밥", "게살 볶음밥", "XO소스 볶음밥", "야채 볶음밥", "계란 볶음밥"],
+                        "덮밥":   ["팔보채 덮밥", "새우 요리 덮밥", "난자완스 덮밥", "홍소 가지 덮밥", "동파육 덮밥"],
+                        "솥밥":   ["연잎밥", "돼지갈비 솥밥", "표고버섯 솥밥", "전복 솥밥"]
+                    },
+                    "면": {
+                        "탕면":    ["완탕면", "우육면", "닭 육수 탕면", "굴 탕면", "해물 탕면"],
+                        "비빔면":  ["냉 참깨 소면", "냉 우육면", "잡채면"],
+                        "볶음면":  ["잡채", "굴소스 볶음면", "게살 볶음면", "야채 볶음면"]
+                    },
+                    "국물": {
+                        "탕":  ["완탕수프", "계란꽃 수프", "옥수수 게살 수프", "죽순탕", "버섯탕"],
+                        "죽":  ["피단죽", "전복죽", "닭고기죽", "야채죽", "생선죽"]
+                    },
+                    "고기": {
+                        "돼지":  ["동파육", "탕수육", "류산슬", "채소 돼지볶음", "돼지고기 굴소스볶음"],
+                        "닭":    ["레몬 치킨", "유린기", "깐풍기", "닭고기 캐슈너트볶음", "스팀 치킨"],
+                        "소":    ["굴소스 소고기볶음", "소고기 브로콜리볶음", "소고기 셀러리볶음", "소고기 두반 순한볶음"]
+                    },
+                    "해산물": {
+                        "새우":  ["마늘 버터 새우", "새우 두부볶음", "새우 야채볶음", "새우 두반 순한볶음", "칠리새우 (순한)"],
+                        "생선":  ["생선 파 소금찜", "홍소어", "생선 두반 찜 (순한)"],
+                        "기타":  ["해파리 냉채", "전복 굴소스볶음", "문어 야채볶음", "게살 두부탕"]
+                    }
+                },
+                "매운": {
+                    "밥": {
+                        "볶음밥": ["마라 볶음밥", "두반장 볶음밥", "김치 중식 볶음밥", "마라 해물 볶음밥"],
+                        "덮밥":   ["마파두부 덮밥", "마라 소고기 덮밥", "수이주 덮밥", "마라 해물 덮밥", "홍유 닭 덮밥"],
+                        "탕반":   ["마라탕반", "단단면 밥", "충칭 두반 덮밥"]
+                    },
+                    "면": {
+                        "탕면":   ["마라 탕면", "단단면", "충칭 소면", "홍유 탕면", "쓰촨식 우육면", "마파 탕면"],
+                        "비빔면": ["마라 비빔면", "두반 비빔면", "홍유 비빔면", "매운 냉 우육면"],
+                        "볶음면": ["마라 볶음면", "두반 새우 볶음면", "스파이시 잡채면"]
+                    },
+                    "국물": {
+                        "탕":   ["마라탕", "쓰촨 해물탕", "마파 순두부탕", "마라 사골탕"],
+                        "훠궈": ["마라 훠궈", "홍탕 훠궈", "뼈 육수 훠궈", "버섯 마라 훠궈", "해물 마라 훠궈"]
+                    },
+                    "고기": {
+                        "돼지":  ["마라 삼겹살", "쓰촨 두반 돼지볶음", "매운 돼지 귀볶음", "홍유 돼지볶음"],
+                        "닭":    ["라조기", "마라 닭볶음", "쓰촨 닭발", "향라 닭강정", "홍유 닭볶음"],
+                        "소":    ["수이주 소고기", "마라 소고기볶음", "쓰촨 소고기 덮밥", "두반 소고기볶음"]
+                    },
+                    "해산물": {
+                        "새우":  ["마라 새우", "두반장 새우볶음", "칠리 새우", "쓰촨 새우볶음"],
+                        "생선":  ["수이주 생선", "마라 생선찜", "두반 생선조림", "홍유 생선찜"],
+                        "기타":  ["마라 오징어볶음", "마라 조개볶음", "마라 해물탕", "쓰촨 문어볶음"]
+                    }
+                }
+            }
+        };
+
+        const catPos = { 
+            top:    { x: ORIGIN - HALF_NODE, y: ORIGIN - DISTANCE - HALF_NODE }, 
+            right:  { x: ORIGIN + DISTANCE - HALF_NODE, y: ORIGIN - HALF_NODE }, 
+            bottom: { x: ORIGIN - HALF_NODE, y: ORIGIN + DISTANCE - HALF_NODE }, 
+            left:   { x: ORIGIN - DISTANCE - HALF_NODE, y: ORIGIN - HALF_NODE } 
+        };
+
+        function getCatCenter(dir) {
+            return {
+                x: catPos[dir].x + HALF_NODE,
+                y: catPos[dir].y + HALF_NODE
+            };
+        }
+
+        window.onload = () => focusNode(ORIGIN, ORIGIN);
+
+        function focusNode(x, y) {
+            const absoluteX = (3000 - 1200) / 2 + x;
+            const absoluteY = (3000 - 1200) / 2 + y;
+            window.scrollTo({
+                left: absoluteX - (window.innerWidth / 2),
+                top: absoluteY - (window.innerHeight / 2),
+                behavior: 'smooth'
+            });
+        }
+
+        let isExpanded = false;
+        const canvas = document.getElementById('line-canvas');
+        const container = document.getElementById('main-container');
+
+        function drawLine(x1, y1, x2, y2, className) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("class", "line " + className);
+            line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+            const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+            line.style.strokeDasharray = length; line.style.strokeDashoffset = length;
+            canvas.appendChild(line);
+            setTimeout(() => { line.style.strokeDashoffset = "0"; }, 50);
+        }
+
+        function toggleMenu() {
+            if (!isExpanded) {
+                document.querySelectorAll('.category').forEach(node => {
+                    const dir = node.id.split('-')[1];
+                    node.style.left = catPos[dir].x + "px"; 
+                    node.style.top = catPos[dir].y + "px";
+                    node.classList.add('active');
+                    drawLine(ORIGIN, ORIGIN, catPos[dir].x + HALF_NODE, catPos[dir].y + HALF_NODE, "p-line");
+                });
+                isExpanded = true;
+                document.getElementById('center-node').innerText = "닫기";
+            } else {
+                resetAll();
+            }
+        }
+
+        function resetAll() {
+            document.querySelectorAll('.sub-option, .leaf-option').forEach(n => n.remove());
+            canvas.querySelectorAll('.sub-line, .leaf-line, .p-line').forEach(l => l.remove());
+            document.querySelectorAll('.category').forEach(node => {
+                node.classList.remove('active');
+                node.style.removeProperty('opacity');
+                node.style.removeProperty('transform');
+                node.style.removeProperty('pointer-events');
+                node.style.removeProperty('left');
+                node.style.removeProperty('top');
+            });
+            isExpanded = false;
+            document.getElementById('center-node').innerText = "시작하기";
+            document.getElementById('message').innerText = "메뉴를 선택해보세요!";
+            focusNode(ORIGIN, ORIGIN);
+        }
+
+        // 방향별 확장 설정
+        // top(한식): 위로 / right(일식): 오른쪽 / bottom(양식): 아래로 / left(중식): 왼쪽
+        const dirConfig = {
+            top:    { mx: 0, my: -1, ox: 1, oy: 0,  leafBaseAngle: -80, focusOffX:   0, focusOffY: -40 },
+            right:  { mx: 1, my:  0, ox: 0, oy: 1,  leafBaseAngle: -80, focusOffX:  40, focusOffY:   0 },
+            bottom: { mx: 0, my:  1, ox: 1, oy: 0,  leafBaseAngle: -80, focusOffX:   0, focusOffY:  40 },
+            left:   { mx: -1,my:  0, ox: 0, oy: 1,  leafBaseAngle: -80, focusOffX: -40, focusOffY:   0 }
+        };
+
+        function selectCategory(el, name, dir) {
+            const center = getCatCenter(dir);
+            const startX = center.x, startY = center.y;
+            const cfg = dirConfig[dir];
+            const STEP = 75;
+
+            clearNodes(['.sub-option', '.leaf-option'], ['.sub-line', '.leaf-line']);
+
+            // 중간 분기점: 방향벡터(mx,my)로 STEP만큼 이동
+            const midX = startX + cfg.mx * STEP;
+            const midY = startY + cfg.my * STEP;
+            focusNode(midX + cfg.focusOffX, midY + cfg.focusOffY);
+            drawLine(startX, startY, midX, midY, "sub-line");
+
+            // 두 갈래: 방향에 수직인 축(ox,oy)으로 ±150 이동
+            const options = [
+                { label: "안 매운", x: midX + cfg.mx * 50 - cfg.ox * 130, y: midY + cfg.my * 50 - cfg.oy * 130 },
+                { label: "매운",    x: midX + cfg.mx * 50 + cfg.ox * 130, y: midY + cfg.my * 50 + cfg.oy * 130 }
+            ];
+            options.forEach((opt) => {
+                setTimeout(() => {
+                    drawLine(midX, midY, opt.x, opt.y, "sub-line");
+                    const btn = createNode(opt.label, opt.x, opt.y, 'sub-option');
+                    btn.onclick = (e) => { e.stopPropagation(); showLeafOptions(opt.x, opt.y, name, opt.label, dir); };
+                }, 400);
+            });
+        }
+
+        function showLeafOptions(pCenterX, pCenterY, cuisine, taste, dir) {
+            const cfg = dirConfig[dir];
+            focusNode(pCenterX + cfg.mx * 65, pCenterY + cfg.my * 65);
+            clearNodes(['.leaf-option'], ['.leaf-line']);
+            const leaves = Object.keys(allFoodData[cuisine][taste]);
+
+            // 방향별 부채꼴 기준각: 뻗어나가는 방향을 중심으로 팬 펼치기
+            // top/bottom → 수평 팬, right/left → 수직 팬
+            const isVertical = (dir === 'right' || dir === 'left');
+
+            leaves.forEach((label, i) => {
+                let destX, destY;
+                if (isVertical) {
+                    // 오른쪽/왼쪽: 수직으로 팬 펼치기
+                    const spreadAngle = (-80 + i * 40) * (Math.PI / 180);
+                    // right: x는 양수, left: x는 음수
+                    destX = pCenterX + cfg.mx * 115 * Math.cos(spreadAngle);
+                    destY = pCenterY + 115 * Math.sin(spreadAngle);
+                } else {
+                    // 위/아래: 수평으로 팬 펼치기
+                    const spreadAngle = (-80 + i * 40) * (Math.PI / 180);
+                    destX = pCenterX + 115 * Math.sin(spreadAngle);
+                    // top: 위로(-), bottom: 아래로(+)
+                    destY = pCenterY + cfg.my * 115 * Math.cos(spreadAngle);
+                }
+                drawLine(pCenterX, pCenterY, destX, destY, "leaf-line");
+                const btn = createNode(label, destX, destY, 'leaf-option');
+                btn.onclick = (e) => { 
+                    e.stopPropagation(); 
+                    openModal(cuisine, taste, label);
+                };
+            });
+        }
+
+        function createNode(label, x, y, className) {
+            const btn = document.createElement('div');
+            btn.className = 'node ' + className;
+            btn.innerText = label;
+            const offset = className === 'leaf-option' ? 32.5 : 37.5;
+            btn.style.left = (x - offset) + "px"; btn.style.top = (y - offset) + "px";
+            container.appendChild(btn);
+            setTimeout(() => { btn.style.opacity = "1"; btn.style.transform = "scale(1)"; }, 100);
+            return btn;
+        }
+
+        function clearNodes(selectors, lineSelectors) {
+            selectors.forEach(s => document.querySelectorAll(s).forEach(n => n.remove()));
+            lineSelectors.forEach(s => canvas.querySelectorAll(s).forEach(l => l.remove()));
+        }
+
+        function openModal(cuisine, taste, mainCategory) {
+            const subCategories = Object.keys(allFoodData[cuisine][taste][mainCategory]);
+            const tabContainer = document.getElementById('modal-tab-container');
+            tabContainer.innerHTML = "";
+            subCategories.forEach((sub, idx) => {
+                const tab = document.createElement('div');
+                tab.className = 'tab-btn' + (idx === 0 ? ' active' : '');
+                tab.innerText = sub;
+                tab.onclick = (e) => switchTab(cuisine, taste, mainCategory, sub, e.target);
+                tabContainer.appendChild(tab);
+            });
+            document.getElementById('modal-overlay').style.display = "block";
+            document.getElementById('modal').style.display = "block";
+            switchTab(cuisine, taste, mainCategory, subCategories[0], tabContainer.firstChild);
+        }
+
+        function switchTab(cuisine, taste, main, sub, element) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if(element) element.classList.add('active');
+            document.getElementById('modal-list').innerHTML = allFoodData[cuisine][taste][main][sub].map(item => `<li>${item}</li>`).join("");
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').style.display = "none";
+            document.getElementById('modal').style.display = "none";
+        }
+    </script>
+</body>
+</html>
