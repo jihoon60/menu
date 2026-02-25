@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>음식 만다라트</title>
     <style>
         body {
@@ -52,6 +53,26 @@
         #modal-list li { padding: 12px 0; border-bottom: 1px solid #f5f5f5; text-align: center; }
         .close-modal-btn { display: block; width: 100%; margin-top: 15px; background: #E07A5F; color: white; border: none; padding: 12px; border-radius: 15px; cursor: pointer; }
         #message { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); color: #8D8171; background: rgba(255, 253, 245, 0.9); padding: 10px 20px; border-radius: 50px; z-index: 100; }
+
+        /* ── 모바일 전용 스타일 ── */
+        @media (max-width: 768px) {
+            .node {
+                width: 110px; height: 110px;
+                font-size: 1.1rem; border-radius: 28px;
+            }
+            .leaf-option {
+                width: 95px; height: 95px;
+                font-size: 1rem;
+            }
+            #modal {
+                width: 92vw;
+                padding: 20px;
+            }
+            .tab-btn { font-size: 1rem; padding: 12px 16px; }
+            #modal-list li { font-size: 1rem; padding: 15px 0; }
+            .close-modal-btn { font-size: 1rem; padding: 15px; }
+            #message { font-size: 1rem; padding: 12px 24px; }
+        }
     </style>
 </head>
 <body>
@@ -73,13 +94,21 @@
         </div>
     </div>
 
-    <div id="message">메뉴를 선택해보세요!</div>
+    <div id="message">메뉴를 선택해보세요</div>
 
     <script>
-        const ORIGIN = 600; 
-        const NODE_SIZE = 75;
-        const HALF_NODE = NODE_SIZE / 2;
-        const DISTANCE = 140;
+        const isMobile = window.innerWidth <= 768;
+
+        const ORIGIN = 600;
+        const NODE_SIZE  = isMobile ? 110 : 75;
+        const LEAF_SIZE  = isMobile ? 95  : 65;
+        const HALF_NODE  = NODE_SIZE / 2;
+        const HALF_LEAF  = LEAF_SIZE / 2;
+        const DISTANCE   = isMobile ? 200 : 140;   // 중심 → 카테고리
+        const STEP       = isMobile ? 110 : 75;    // 카테고리 → 분기점
+        const SUB_SPREAD = isMobile ? 185 : 130;   // 분기점 좌우 벌어짐
+        const SUB_FWD    = isMobile ? 70  : 50;    // 분기점 → 서브노드 전진
+        const LEAF_R     = isMobile ? 160 : 115;   // 서브노드 → 리프 반지름
 
         // ══════════════════════════════════════════
         //  전체 음식 데이터
@@ -331,7 +360,14 @@
             };
         }
 
-        window.onload = () => focusNode(ORIGIN, ORIGIN);
+        window.onload = () => {
+            const cn = document.getElementById('center-node');
+            cn.style.width  = NODE_SIZE + 'px';
+            cn.style.height = NODE_SIZE + 'px';
+            cn.style.left   = (ORIGIN - HALF_NODE) + 'px';
+            cn.style.top    = (ORIGIN - HALF_NODE) + 'px';
+            focusNode(ORIGIN, ORIGIN);
+        };
 
         function focusNode(x, y) {
             const absoluteX = (3000 - 1200) / 2 + x;
@@ -404,7 +440,7 @@
             const center = getCatCenter(dir);
             const startX = center.x, startY = center.y;
             const cfg = dirConfig[dir];
-            const STEP = 75;
+            // STEP, SUB_FWD, SUB_SPREAD 는 상단 상수 사용
 
             clearNodes(['.sub-option', '.leaf-option'], ['.sub-line', '.leaf-line']);
 
@@ -416,8 +452,8 @@
 
             // 두 갈래: 방향에 수직인 축(ox,oy)으로 ±150 이동
             const options = [
-                { label: "안 매운", x: midX + cfg.mx * 50 - cfg.ox * 130, y: midY + cfg.my * 50 - cfg.oy * 130 },
-                { label: "매운",    x: midX + cfg.mx * 50 + cfg.ox * 130, y: midY + cfg.my * 50 + cfg.oy * 130 }
+                { label: "안 매운", x: midX + cfg.mx * SUB_FWD - cfg.ox * SUB_SPREAD, y: midY + cfg.my * SUB_FWD - cfg.oy * SUB_SPREAD },
+                { label: "매운",    x: midX + cfg.mx * SUB_FWD + cfg.ox * SUB_SPREAD, y: midY + cfg.my * SUB_FWD + cfg.oy * SUB_SPREAD }
             ];
             options.forEach((opt) => {
                 setTimeout(() => {
@@ -430,7 +466,7 @@
 
         function showLeafOptions(pCenterX, pCenterY, cuisine, taste, dir) {
             const cfg = dirConfig[dir];
-            focusNode(pCenterX + cfg.mx * 65, pCenterY + cfg.my * 65);
+            focusNode(pCenterX + cfg.mx * LEAF_R, pCenterY + cfg.my * LEAF_R);
             clearNodes(['.leaf-option'], ['.leaf-line']);
             const leaves = Object.keys(allFoodData[cuisine][taste]);
 
@@ -444,14 +480,14 @@
                     // 오른쪽/왼쪽: 수직으로 팬 펼치기
                     const spreadAngle = (-80 + i * 40) * (Math.PI / 180);
                     // right: x는 양수, left: x는 음수
-                    destX = pCenterX + cfg.mx * 115 * Math.cos(spreadAngle);
-                    destY = pCenterY + 115 * Math.sin(spreadAngle);
+                    destX = pCenterX + cfg.mx * LEAF_R * Math.cos(spreadAngle);
+                    destY = pCenterY + LEAF_R * Math.sin(spreadAngle);
                 } else {
                     // 위/아래: 수평으로 팬 펼치기
                     const spreadAngle = (-80 + i * 40) * (Math.PI / 180);
-                    destX = pCenterX + 115 * Math.sin(spreadAngle);
+                    destX = pCenterX + LEAF_R * Math.sin(spreadAngle);
                     // top: 위로(-), bottom: 아래로(+)
-                    destY = pCenterY + cfg.my * 115 * Math.cos(spreadAngle);
+                    destY = pCenterY + cfg.my * LEAF_R * Math.cos(spreadAngle);
                 }
                 drawLine(pCenterX, pCenterY, destX, destY, "leaf-line");
                 const btn = createNode(label, destX, destY, 'leaf-option');
@@ -466,7 +502,7 @@
             const btn = document.createElement('div');
             btn.className = 'node ' + className;
             btn.innerText = label;
-            const offset = className === 'leaf-option' ? 32.5 : 37.5;
+            const offset = className === 'leaf-option' ? HALF_LEAF : HALF_NODE;
             btn.style.left = (x - offset) + "px"; btn.style.top = (y - offset) + "px";
             container.appendChild(btn);
             setTimeout(() => { btn.style.opacity = "1"; btn.style.transform = "scale(1)"; }, 100);
